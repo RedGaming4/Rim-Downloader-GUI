@@ -1,5 +1,9 @@
-# Myrient-Downloader-GUI
-Tool to download software from Myrient, written in Python
+
+# Myrient-Downloader-GUI (Forked and Expanded)
+
+This is a **fork** of [Hadobedo's Myrient-Downloader-GUI](https://github.com/hadobedo/Myrient-Downloader-GUI).  
+All initial work, ideas, and inspiration are credited to Hadobedo. This fork refactors the original code, enhances functionality, and introduces support for additional ROM websites and platforms.
+
 ![image](https://github.com/hadobedo/Myrient-Downloader-GUI/assets/34556645/5d499a6b-b53e-4a09-bafe-785e01261973)
 
 Features:

@@ -13,6 +13,8 @@ import urllib.parse
 import json
 import difflib
 import time
+import logging
+import sys
 import pickle
 import random
 import threading
@@ -28,6 +30,61 @@ from PyQt5.QtWidgets import QApplication, QGridLayout, QGroupBox, QWidget, QVBox
     QTabWidget
 from PyQt5.QtCore import QThread, pyqtSignal, QSettings, QEventLoop
 from PyQt5.QtGui import QTextCursor
+
+
+## key things to add
+## logging.
+## clean up the code make it faster and more efficient.
+## clean up UI and get ready for new features. 
+## add more services.
+## refactored code so classes and gui is in seperate files...
+
+class Logger:
+    def __init__(self, name, log_file, level=logging.INFO):
+        self.name = name # attributes 
+        self.log_file = log_file
+        self.level = level
+        self.logger = self.logger_setup()
+
+    def logger_setup(self):
+        logger = logging.getLogger(self.name)
+        logger.setLevel(self.level)
+
+        file_handler = logging.FileHandler(self.log_file)
+        formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
+        
+        console_handler = logging.StreamHandler()
+        console_handler.setFormatter(formatter)
+        logger .addHandler(console_handler)
+
+        return logger
+    
+    def log_information(self, message):
+        self.logger.info(message)
+
+
+    def log_error(self, message):
+        self.logger.error(message)
+
+
+    def log_warnings(self, message):
+        self.logger.warning(message)
+
+
+def main():
+    try:
+        logger = Logger('main_logger', 'main_log.log')
+        logger.log_information("main logger has been created.")
+    except Exception as e:
+        logging.error('Main logger failed to initialize')
+    
+    try:
+        logger = Logger('crash_logger', 'crash_log.log')
+    except Exception as e:
+        logger = Logger("")
+
 
 class GetSoftwareListThread(QThread):
     signal = pyqtSignal('PyQt_PyObject')
@@ -92,6 +149,7 @@ class SplitIsoThread(QThread):
         file_size = os.path.getsize(self.file_path)
         if file_size < 4294967295:
             self.status.emit(False)
+
             return
         else:
             chunk_size = 4294967295
@@ -164,7 +222,7 @@ class UnzipRunner(QThread):
 
     def run(self):
         if not self.zip_path.lower().endswith('.zip'):
-            print(f"File {self.zip_path} is not a .zip file. Skipping unzip.")
+            print(f"File {self.zip_path} is not a .zip file. Skipping unzip.") # replace with logger instance
             return
 
         with zipfile.ZipFile(self.zip_path, 'r') as zip_ref:
@@ -368,171 +426,136 @@ class GUIDownloader(QWidget):
         event.accept()  # Accept the close event
 
 
+
     def initUI(self):
         vbox = QVBoxLayout()
-
-        # Add a header for the software list
         iso_list_header = QLabel('Software')
         vbox.addWidget(iso_list_header)
 
-        # Create a search box
+        self.setup_search_box(vbox)
+        self.setup_results_tab(vbox)
+        self.setup_queue_controls(vbox)
+
+        vbox.addWidget(QLabel('Queue'))
+        self.setup_queue_list(vbox)
+
+        self.setup_additional_controls(vbox)
+        self.setLayout(vbox)
+        self.setWindowTitle('Rom Downloader 1.0')
+        self.resize(800, 600)
+        self.show()
+
+    def setup_search_box(self, layout):
         self.search_box = QLineEdit(self)
         self.search_box.setPlaceholderText('Search...')
         self.search_box.textChanged.connect(self.update_results)
-        vbox.addWidget(self.search_box)
-
-        # Create a list for results (software list)
+        layout.addWidget(self.search_box)
+    def setup_results_tab(self, layout):
         self.result_list = QTabWidget(self)
-        self.result_list.addTab(QListWidget(), "PS3 ISOs")
-        self.result_list.addTab(QListWidget(), "PSN PKGs")
-        self.result_list.addTab(QListWidget(), "PS2 ISOs")
-        self.result_list.addTab(QListWidget(), "PSX ISOs")  # New tab
-        self.result_list.addTab(QListWidget(), "PSP ISOs")  # New tab
-        self.result_list.widget(0).addItems(self.ps3iso_list)
-        self.result_list.widget(1).addItems(self.psn_list)
-        self.result_list.widget(2).addItems(self.ps2iso_list)
-        self.result_list.widget(3).addItems(self.psxiso_list)  # New list
-        self.result_list.widget(4).addItems(self.pspiso_list)  # New list
+        names_tabs = ["PS3 ISOs", "PSN PKGs", "PS2 ISOs", "PSX ISOs", "PSP ISOs", "WII-U", "GameCube", "N64"]
+        tab_data = [
+            self.ps3iso_list, 
+            self.psn_list, 
+            self.ps2iso_list, 
+            self.psxiso_list, 
+            self.pspiso_list
+        ]
+
+        # Ensure all tabs are created, even if there's no data
+        for index, name in enumerate(names_tabs):
+            tab = QListWidget()
+        
+        # Add data if available, otherwise show a placeholder message
+            if index < len(tab_data):
+                tab.addItems(tab_data[index])
+            else:
+                tab.addItem("No data available for this category.")
+        
+            tab.setSelectionMode(QAbstractItemView.ExtendedSelection)
+            tab.itemSelectionChanged.connect(self.update_add_to_queue_button)
+            self.result_list.addTab(tab, name)
+
         self.result_list.currentChanged.connect(self.update_add_to_queue_button)
-        vbox.addWidget(self.result_list)
+        layout.addWidget(self.result_list)
 
-        # Connect the itemSelectionChanged signal to the update_add_to_queue_button method
-        self.result_list.widget(0).itemSelectionChanged.connect(self.update_add_to_queue_button)
-        self.result_list.widget(1).itemSelectionChanged.connect(self.update_add_to_queue_button)
-        self.result_list.widget(2).itemSelectionChanged.connect(self.update_add_to_queue_button)
-        self.result_list.widget(3).itemSelectionChanged.connect(self.update_add_to_queue_button)  # New connection
-        self.result_list.widget(4).itemSelectionChanged.connect(self.update_add_to_queue_button)  # New connection
+    
 
-        # Allow selecting multiple items
-        self.result_list.widget(0).setSelectionMode(QAbstractItemView.ExtendedSelection)
-        self.result_list.widget(1).setSelectionMode(QAbstractItemView.ExtendedSelection)
-        self.result_list.widget(2).setSelectionMode(QAbstractItemView.ExtendedSelection)
-        self.result_list.widget(3).setSelectionMode(QAbstractItemView.ExtendedSelection)  # New setting
-        self.result_list.widget(4).setSelectionMode(QAbstractItemView.ExtendedSelection)  # New setting
+    def setup_queue_controls(self, layout):
+       hbox = QHBoxLayout()
+       self.add_to_queue_button = QPushButton('Add to Queue', self)
+       self.add_to_queue_button.clicked.connect(self.add_to_queue)
+       self.add_to_queue_button.setEnabled(False)  # Disable button initially
+       hbox.addWidget(self.add_to_queue_button)
+       
+       self.remove_from_queue_button = QPushButton('Remove from Queue', self)
+       self.remove_from_queue_button.clicked.connect(self.remove_from_queue)
+       self.remove_from_queue_button.setEnabled(False)  # Disable button initially
+       hbox.addWidget(self.remove_from_queue_button)
 
-        # Create a horizontal box layout
-        hbox = QHBoxLayout()
+       self.remove_all_queue_button = QPushButton('Remove all from Queue', self)
+       self.remove_all_queue_button.clicked.connect(self.wipe_queue)
 
-        # Create a button to add to queue
-        self.add_to_queue_button = QPushButton('Add to Queue', self)
-        self.add_to_queue_button.clicked.connect(self.add_to_queue)
-        self.add_to_queue_button.setEnabled(False)  # Disable button initially
-        hbox.addWidget(self.add_to_queue_button)
 
-        # Create a button to remove from queue
-        self.remove_from_queue_button = QPushButton('Remove from Queue', self)
-        self.remove_from_queue_button.clicked.connect(self.remove_from_queue)
-        self.remove_from_queue_button.setEnabled(False)  # Disable button initially
-        hbox.addWidget(self.remove_from_queue_button)
 
-        # Add the horizontal box layout to the vertical box layout
-        vbox.addLayout(hbox)
+       layout.addLayout(hbox)
 
-        # Add the horizontal box layout to the vertical box layout
-        vbox.addLayout(hbox)
-
-        # Add a header for the Queue
-        queue_header = QLabel('Queue')
-        vbox.addWidget(queue_header)
-
-        # Create queue list
+    def setup_queue_list(self, layout):
         self.queue_list = QListWidget(self)
-        self.queue_list.setSelectionMode(QAbstractItemView.MultiSelection)  
-        self.queue_list.itemSelectionChanged.connect(self.update_remove_from_queue_button) 
-        vbox.addWidget(self.queue_list)
+        self.queue_list.setSelectionMode(QAbstractItemView.MultiSelection)
+        self.queue_list.itemSelectionChanged.connect(self.update_remove_from_queue_button)
+        layout.addWidget(self.queue_list)
 
-        # Create a grid layout for the options
+    def setup_options_grid(self, layout):
         grid = QGridLayout()
 
-        # Add a header for the options
-        iso_options_header = QLabel('ISO Settings')
-        grid.addWidget(iso_options_header, 0, 0)
+        options = [
+            ("Decrypt (if necessary)", True, (1, 0), self.decrypt_checkbox),
+            ("Keep encrypted ISO", False, (2,0), self.keep_enc_checkbox),
+            ("Split for FAT32 (IF > 4GB)", True, (3,0), self.split_checkbox),
+            ("Keep unsplit ISO", False, (4,0), self.split_pkg_checkbox),
+            ("Split PKG", True, (1,1), self.split_pkg_checkbox),
+            ("Keep dkey file", False, (5,0), self.keep_dkey_checkbox),
+            ("Zip Folders Dynamically", True, (6,0), self.zipped_checkbox),
 
-        pkg_options_header = QLabel('PKG Settings')
-        grid.addWidget(pkg_options_header, 0, 1)
+        ]
 
-        # Create a checkbox for decrypting the file
-        self.decrypt_checkbox = QCheckBox('Decrypt (if necessary)', self)
-        self.decrypt_checkbox.setChecked(True)  # Enable checkbox by default
-        grid.addWidget(self.decrypt_checkbox, 1, 0)
+        for text, checked, position, attr_name in options: # for loop creates checkboxes dynamically. 
+            checkbox = QCheckBox(text, self)
+            checkbox.setChecked(checked)
+            grid.addWidget(checkbox, *position) 
+            setattr(self, attr_name, checkbox) 
 
-        # Create a checkbox for keeping or deleting the encrypted ISO file
-        self.keep_enc_checkbox = QCheckBox('Keep encrypted ISO', self)
-        self.keep_enc_checkbox.setChecked(False)
-        grid.addWidget(self.keep_enc_checkbox, 2, 0)
 
-        # Create a checkbox for splitting the file for FAT32 filesystems
-        self.split_checkbox = QCheckBox('Split for FAT32 (if > 4GB)', self)
-        self.split_checkbox.setChecked(True)  # Enable checkbox by default
-        grid.addWidget(self.split_checkbox, 3, 0)
-
-        # Create a checkbox for keeping or deleting the unsplit decrypted ISO file
-        self.keep_unsplit_dec_checkbox = QCheckBox('Keep unsplit ISO', self)
-        self.keep_unsplit_dec_checkbox.setChecked(False)
-        grid.addWidget(self.keep_unsplit_dec_checkbox, 4, 0)
-
-        # Create a checkbox for splitting the PKG file
-        self.split_pkg_checkbox = QCheckBox('Split PKG', self)
-        self.split_pkg_checkbox.setChecked(True) # Enable checkbox by default
-        grid.addWidget(self.split_pkg_checkbox, 1, 1)
-
-        # Create a checkbox for keeping or deleting the dkey file
-        self.keep_dkey_checkbox = QCheckBox('Keep dkey file', self)
-        self.keep_dkey_checkbox.setChecked(False)
-        grid.addWidget(self.keep_dkey_checkbox, 5, 0)
-
-        # Connect the stateChanged signal of the decrypt_checkbox to a slot that shows or hides the keep_enc_checkbox
         self.decrypt_checkbox.stateChanged.connect(self.keep_enc_checkbox.setVisible)
-
-        # Connect the stateChanged signal of the split_checkbox to a slot that shows or hides the keep_unsplit_dec_checkbox
         self.split_checkbox.stateChanged.connect(self.keep_unsplit_dec_checkbox.setVisible)
-
-        # Create a group box to contain the grid layout
         group_box = QGroupBox()
         group_box.setLayout(grid)
-        vbox.addWidget(group_box)
+        layout.addWidget(group_box)
 
-        # Create a settings button
+    def setup_additional_controls(self, layout):
+        ## progress bar settings and shit
         self.settings_button = QPushButton('Settings', self)
         self.settings_button.clicked.connect(self.open_settings)
-        vbox.addWidget(self.settings_button)
+        layout.addWidget(self.settings_button)
 
-        # Create a button to start the process
         self.start_button = QPushButton('Start', self)
         self.start_button.clicked.connect(self.start_download)
-        vbox.addWidget(self.start_button)
+        layout.addWidget(self.start_button)
 
-        # Add a header for the Output Window
-        output_window_header = QLabel('Logs')
-        vbox.addWidget(output_window_header)
-
-        # Create an output window
+        layout.addWidget(QLabel('logs'))
         self.output_window = OutputWindow(self)
-        vbox.addWidget(self.output_window)
+        layout.addWidget(self.output_window)
 
-        # Add a header for the progress bar
-        queue_header = QLabel('Progress')
-        vbox.addWidget(queue_header)
-
-        # Create a progress bar and add it to the layout
+        layout.addWidget(QLabel('Progress'))
         self.progress_bar = QProgressBar(self)
-        vbox.addWidget(self.progress_bar)
+        layout.addWidget(self.progress_bar)
 
-        # Add a header for the speed, eta
-        queue_header = QLabel('Download Speed & ETA')
-        vbox.addWidget(queue_header)
-
-        # Create labels for download speed and ETA
+        layout.addWidget(QLabel('Download Speed & ETA'))
         self.download_speed_label = QLabel(self)
-        vbox.addWidget(self.download_speed_label)
+        layout.addWidget(self.download_speed_label)
         self.download_eta_label = QLabel(self)
-        vbox.addWidget(self.download_eta_label)
+        layout.addWidget(self.download_eta_label)
 
-        self.setLayout(vbox)
-
-        self.setWindowTitle('Myrient Downloader')
-        self.resize(800, 600)
-        self.show()
 
     def load_software_list(self, software_list, url, json_filename, setter):
         thread = GetSoftwareListThread(url, json_filename)
@@ -869,6 +892,11 @@ class GUIDownloader(QWidget):
         if self.queue_list.count() > 0:
             self.start_download()
 
+
+    # def downloadn64(self, selected_iso, queue_position):
+
+
+
     def downloadpsxzip(self, selected_iso, queue_position):
         url = "https://myrient.erista.me/files/Redump/Sony%20-%20PlayStation"
         base_name = os.path.splitext(selected_iso)[0]
@@ -901,7 +929,6 @@ class GUIDownloader(QWidget):
         url = "https://myrient.erista.me/files/Redump/Sony%20-%20PlayStation%20Portable"
         base_name = os.path.splitext(selected_iso)[0]
         file_path = self.downloadhelper(selected_iso, queue_position, url)
-
         self.output_window.append(f"({queue_position}) Unzipping {base_name}.zip...")
 
         # Unzip the ISO and delete the ZIP file
